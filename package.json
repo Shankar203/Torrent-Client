@@ -18,8 +18,6 @@
   "homepage": "https://github.com/Shankar203/Torrent-Client#readme",
   "dependencies": {
     "bencode": "^2.0.1",
-    "buffer": "^6.0.3",
-    "int64-buffer": "^1.0.1",
-    "nodemon": "^2.0.7"
+    "int64-buffer": "^1.0.1"
   }
 }
