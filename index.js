@@ -6,7 +6,6 @@ const Buffer = require('buffer').Buffer;
 const urlParse = require('url').parse;
 const crypto = require("crypto");
 const {Uint64BE} = require("int64-buffer");
-const { error } = require('console');
 
 const connection_Id = new Uint64BE(0x41727101980);
 const torrent = bencode.decode(fs.readFileSync('puppy.torrent'));
@@ -17,15 +16,29 @@ const torrent3 = bencode.decode(fs.readFileSync('GTA V - Grand Theft Auto V.torr
 
 async function getPeers (torrent) {
   for(let i = -1 ; i<0 || torrent["announce-list"][i] ; i++){
+    console.log(i);
 
     //all tracker url won't be online
     const url = (i<0) ? urlParse(torrent.announce.toString('utf8')) : torrent["announce-list"][i].toString('utf8');
     const socket = dgram.createSocket('udp4');
 
     await udpSend(socket, buildConnReq(), url);
-    const Resp = await announceResp(socket, url);
+    const Resp = await new Promise(resolve => {
+      socket.on("message", response => {
+        //0 : connect; if 1 : announce
+        if (response.readUInt32BE(0) === 0){
+          const connResp = parseConnResp(response);
+          const announceReq = buildAnnounceReq(connResp.connectionId,torrent);
+          udpSend(socket, announceReq, url);
+        }else if (response.readUInt32BE(0) === 1) {
+          const announceResp = parseAnnounceResp(response);
+          resolve(announceResp);
+        }
+      })
+      setTimeout(() => {resolve();}, 2000);
+    });
 
-    if(Resp) return Resp.peers;
+    if(Resp) return Resp;
   }
   throw new Error("your torrent is dead");
 }
@@ -54,27 +67,27 @@ function udpSend(socket, message, rawUrl) {
   const url = urlParse(rawUrl);
   return new Promise(resolve =>{
     socket.send(message, 0, message.length, url.port, url.hostname, () => {
+      resolve();
     });
-    resolve();
   })
 }
 
-function announceResp(socket, url){
-  return new Promise(resolve => {
-    socket.on("message", response => {
-      //0 : connect; if 1 : announce
-      if (response.readUInt32BE(0) === 0){
-        const connResp = parseConnResp(response);
-        const announceReq = buildAnnounceReq(connResp.connectionId,torrent);
-        udpSend(socket, announceReq, url);
-      }else if (response.readUInt32BE(0) === 1) {
-        const announceResp = parseAnnounceResp(response);
-        resolve(announceResp);
-      }
-    })
-    setTimeout(() => {resolve();}, 2000);
-  });
-}
+// function announceResp(socket, url){
+//   return new Promise(resolve => {
+//     socket.on("message", response => {
+//       //0 : connect; if 1 : announce
+//       if (response.readUInt32BE(0) === 0){
+//         const connResp = parseConnResp(response);
+//         const announceReq = buildAnnounceReq(connResp.connectionId,torrent);
+//         udpSend(socket, announceReq, url);
+//       }else if (response.readUInt32BE(0) === 1) {
+//         const announceResp = parseAnnounceResp(response);
+//         resolve(announceResp);
+//       }
+//     })
+//     setTimeout(() => {resolve();}, 2000);
+//   });
+// }
 
 
 function buildConnReq() {
@@ -201,6 +214,6 @@ function parseAnnounceResp(resp) {
   }    
 }
 
-getPeers(torrent)
+getPeers(torrent2)
   .then(peers => {console.log(peers);})
   .catch(err => {console.error(err);});
