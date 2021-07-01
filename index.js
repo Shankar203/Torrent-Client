@@ -20,6 +20,7 @@ const torrent4 = bencode.decode(fs.readFileSync('Forbidden Knowledge - 101 Thing
 
 async function getPeers(torrent, udpTYPE="udp4") {
   for(let i = -1 ; i<0 || torrent["announce-list"][i] ; i++){
+    console.log(i);
 
     //all tracker url won't be online
     const url = (i<0) ? urlParse(torrent.announce.toString('utf8')) : torrent["announce-list"][i].toString('utf8');
@@ -146,7 +147,7 @@ function buildAnnounceReq(connId, torrent, port=6881) {
   infoHash(torrent).copy(buf, 16);
   // peerId
   const peerId = crypto.randomBytes(20);
-  Buffer.from('-AT0001-').copy(peerId, 0);  
+  Buffer.from('-TC0120-').copy(peerId, 0);  
   peerId.copy(buf, 36);
   // downloaded
   Buffer.alloc(8).copy(buf, 56);
@@ -202,21 +203,51 @@ function parseAnnounceResp(resp) {
   }    
 }
 
- getPeers(torrent)
-  .then( peers => console.log(peers))
+//  getPeers(torrent)
+//   .then( peers => console.log(peers))
+//   .catch( err => console.error(err));
+
+
+
+
+getPeers(torrent)
+  .then( peers => {
+    peers.forEach(peer => download(peer, torrent));
+  })
   .catch( err => console.error(err));
 
 
-function download(peer) {
+
+
+
+
+
+
+function download(peer, torrent) {
   const socket = net.Socket();
-  socket.on('error', console.error);
+  socket.on('error', console.log);
   socket.connect(peer.port, peer.ip, () => {
     // socket.write(...) write a message here
+    socket.write(buildHandshake(torrent));
   });
-  onWholeMsg(socket, data => {
-    // handle response here
+  onWholeMsg(socket, wholeMsg => {
+    // checks if response is handshake
+    if (wholeMsg.length === wholeMsg.readUInt8(0) + 49 && wholeMsg.toString('utf8', 1) === 'BitTorrent protocol') {
+      socket.write(buildInterested());
+    } else {
+      const m = parseMsg(wholeMsg);
+
+      console.log(m);
+
+      // if (m.id === 0) chokeHandler();
+      // if (m.id === 1) unchokeHandler();
+      // if (m.id === 4) haveHandler(m.payload);
+      // if (m.id === 5) bitfieldHandler(m.payload);
+      // if (m.id === 7) pieceHandler(m.payload);
+    }
   });
 }
+
 
 function onWholeMsg(socket, callback) {
   let savedBuf = Buffer.alloc(0);
@@ -234,7 +265,28 @@ function onWholeMsg(socket, callback) {
     }
   });
 }
-  
+
+function parseMsg(msg) {
+  const id = msg.length > 4 ? msg.readInt8(4) : null;
+  let payload = msg.length > 5 ? msg.slice(5) : null;
+  if (id === 6 || id === 7 || id === 8) {
+    const rest = payload.slice(8);
+    payload = {
+      index: payload.readInt32BE(0),
+      begin: payload.readInt32BE(4)
+    };
+    payload[id === 7 ? 'block' : 'length'] = rest;
+  }
+
+  return {
+    size : msg.readInt32BE(0),
+    id : id,
+    payload : payload
+  }
+}
+
+
+
 function buildHandshake(torrent){
 
         // handshake: <pstrlen><pstr><reserved><info_hash><peer_id>
