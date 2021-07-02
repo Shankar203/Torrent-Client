@@ -212,7 +212,8 @@ function parseAnnounceResp(resp) {
 
 getPeers(torrent)
   .then( peers => {
-    peers.forEach(peer => download(peer, torrent));
+    const requested = [];
+    peers.forEach(peer => download(peer, torrent, requested));
   })
   .catch( err => console.error(err));
 
@@ -223,9 +224,9 @@ getPeers(torrent)
 
 
 
-function download(peer, torrent) {
+function download(peer, torrent, requested) {
   const socket = net.Socket();
-  socket.on('error', console.log);
+  socket.on('error', console.error);
   socket.connect(peer.port, peer.ip, () => {
     // socket.write(...) write a message here
     socket.write(buildHandshake(torrent));
@@ -237,13 +238,11 @@ function download(peer, torrent) {
     } else {
       const m = parseMsg(wholeMsg);
 
-      console.log(m);
-
       // if (m.id === 0) chokeHandler();
       // if (m.id === 1) unchokeHandler();
-      // if (m.id === 4) haveHandler(m.payload);
+      if (m.id === 4) haveHandler(m.payload, socket, requested, queue);
       // if (m.id === 5) bitfieldHandler(m.payload);
-      // if (m.id === 7) pieceHandler(m.payload);
+      if (m.id === 7) pieceHandler(m.payload, socket, requested, queue);
     }
   });
 }
@@ -284,6 +283,49 @@ function parseMsg(msg) {
     payload : payload
   }
 }
+
+
+function chokeHandler() {
+  // ... 
+}
+
+function unchokeHandler() { 
+  //... 
+}
+
+function haveHandler(payload, socket, requested, queue) { 
+  //... 
+  const pieceIndex = payload.readUInt32BE(0);
+  if (!requested[pieceIndex]) {
+    socket.write(buildRequest(payload));
+  }
+  requested[pieceIndex] = true;
+  if (queue.length === 1) {
+    requestPiece(socket, requested, queue);
+  }
+}
+
+function bitfieldHandler(payload) { 
+  //... 
+}
+
+function pieceHandler(payload, socket, requested, queue) { 
+  queue.shift();
+  requestPiece(socket, requested, queue);
+}
+
+function requestPiece(socket, requested, queue) {
+  if (requested[queue[0]]) {
+    queue.shift();
+  } else {
+    // this is pseudo-code, as buildRequest actually takes slightly more
+    // complex arguments
+    socket.write(buildRequest(pieceIndex));
+  }
+}
+
+
+
 
 
 
